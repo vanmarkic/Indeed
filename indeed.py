@@ -2,6 +2,8 @@ import re
 import json
 from bs4 import BeautifulSoup
 from selenium import webdriver
+import asyncio
+from pyppeteer import launch
 from pymongo import MongoClient
 import datetime
 
@@ -19,24 +21,38 @@ now = datetime.datetime.now().strftime("%Y - %m - %d")
 #     print(collection)
 
 
-def get_soup(url):
-    """
-    Given the url of a page, this function returns the soup object.
-
-    Parameters:
-        url: the link to get soup object for
-
-    Returns:
-        soup: soup object
-    """
-    driver = webdriver.Firefox()
-    driver.implicitly_wait(30)
-    driver.get(url)
-    html = driver.page_source
-    soup = BeautifulSoup(html, 'html.parser')
-    driver.close()
-
+async def get_soup(url):
+    browser = await launch()
+    # context = await browser.createIncognitoBrowserContext()
+    # page = await context.newPage()
+    page = await browser.newPage()
+    await page.goto(url)
+    html = await page.content()
+    soup = BeautifulSoup(html, 'html.parser') 
+    await browser.close()
     return soup
+
+
+# def get_soup(url):
+#     """
+#     Given the url of a page, this function returns the soup object.
+
+#     Parameters:
+#         url: the link to get soup object for
+
+#     Returns:
+#         soup: soup object
+#     """
+#     driver = webdriver.Firefox()
+#     driver.implicitly_wait(30)
+#     driver.get(url)
+
+#     html = driver.page_source
+#     soup = BeautifulSoup(html, 'html.parser')
+    
+#     driver.close()
+
+#     return soup
 
 
 def grab_job_links(soup):
@@ -54,13 +70,13 @@ def grab_job_links(soup):
     urls = []
 
     # Loop thru all the posting links
-    for link in soup.find_all('h2', {'class': 'jobtitle'}):
+    for link in soup[0].find_all('h2', {'class': 'jobtitle'}):
         # Since sponsored job postings are represented by "a target" instead of "a href", no need to worry here
         partial_url = link.a.get('href')
 
         # This is a partial url, we need to attach the prefix
         url = 'https://be.indeed.com' + partial_url
-        print(url)
+        # print(url)
         # Make sure this is not a sponsored posting
         urls.append(url)
 
@@ -82,23 +98,33 @@ def get_urls(query, num_pages, location):
     """
     # We always need the first page
     base_url = 'https://be.indeed.com/jobs?q={}&l={}'.format(query, location)
-    soup = get_soup(base_url)
+    
+    # this is the event loop
+    loop = asyncio.get_event_loop()
+    # schedule both the coroutines to run on the event loop
+    soup = loop.run_until_complete(asyncio.gather(get_soup(base_url)))  
+    # soup = get_soup(base_url) 
+    # print(soup)
+    
+
+   
     urls = grab_job_links(soup)
 
     # Get the total number of postings found
-    posting_count_string = soup.find(
+    posting_count_string = soup[0].find(
         name='div', attrs={'id': "searchCount"}).get_text()
     posting_count_string = posting_count_string[posting_count_string.find(
         'of')+2:].strip()
-    #print('posting_count_string: {}'.format(posting_count_string))
-    #print('type is: {}'.format(type(posting_count_string)))
+    # print('posting_count_string: {}'.format(posting_count_string))
+    # print('type is: {}'.format(type(posting_count_string)))
+
 
     try:
         posting_count = int(posting_count_string)
     except ValueError:  # deal with special case when parsed string is "360 jobs"
         posting_count = int(re.search('\d+', posting_count_string).group(0))
-        #print('posting_count: {}'.format(posting_count))
-        #print('\ntype: {}'.format(type(posting_count)))
+        # print('posting_count: {}'.format(posting_count))
+        # print('\ntype: {}'.format(type(posting_count)))
     finally:
         posting_count = 330  # setting to 330 when unable to get the total
         pass
@@ -114,17 +140,20 @@ def get_urls(query, num_pages, location):
         # Start loop from page 2 since page 1 has been dealt with above
         for i in range(2, num_pages+1):
             num = (i-1) * 10
-            base_url = 'https:/be.indeed.com/jobs?q={}&l={}&start={}'.format(
-                query, location, num)
+            base_url = 'https:/be.indeed.com/jobs?q={}&l={}&start={}'.format(query, location, num)
             try:
-                soup = get_soup(base_url)
+                    # this is the event loop
+                loop = asyncio.get_event_loop()
+                # schedule both the coroutines to run on the event loop
+                soup = loop.run_until_complete(asyncio.gather(get_soup(base_url)))  
+                # soup = get_soup(base_url)
                 # We always combine the results back to the list
                 urls += grab_job_links(soup)
             except:
                 continue
 
     # Check to ensure the number of urls gotten is correct
-    #assert len(urls) == num_pages * 10, "There are missing job links, check code!"
+    # assert len(urls) == num_pages * 10, "There are missing job links, check code!"
 
     return urls
 
@@ -141,24 +170,26 @@ def get_posting(url):
         posting: the job posting content
     """
     # Get the url content as BS object
-    soup = get_soup(url)
+        # this is the event loop
+    loop = asyncio.get_event_loop()
+    # schedule both the coroutines to run on the event loop
+    soup = loop.run_until_complete(asyncio.gather(get_soup(url)))  
+    # soup = get_soup(url)
 
-    # The job title is held in the h3 tag
 
-
-
-    title = soup.find(name='h3', attrs={'class': "icl-u-xs-mb--xs icl-u-xs-mt--none jobsearch-JobInfoHeader-title"}).getText()
-    posting = soup.find(name='div', attrs={'class': "jobsearch-JobComponent-description icl-u-xs-mt--md"}).get_text()
-    company = soup.find(name='div', attrs={'class': "icl-u-lg-mr--sm icl-u-xs-mr--xs"}).get_text()
-    companyloc = soup.find(text=company).findNext('div').findNext('div').get_text()
+    title = soup[0].find(name='h3', attrs={'class': "icl-u-xs-mb--xs icl-u-xs-mt--none jobsearch-JobInfoHeader-title"}).getText()
+    posting = soup[0].find(name='div', attrs={'class': "jobsearch-JobComponent-description icl-u-xs-mt--md"}).get_text()
+    company = soup[0].find(name='div', attrs={'class': "icl-u-lg-mr--sm icl-u-xs-mr--xs"}).get_text()
+    companyloc = soup[0].find(text=company).findNext('div').findNext('div').get_text()
     
-    posttime = soup.find(name='div', attrs={'class': "jobsearch-JobMetadataFooter"}).contents[0]
+    posttime = soup[0].find(name='div', attrs={'class': "jobsearch-JobMetadataFooter"}).contents[1]
     print(posttime)
+    
     if type(posttime) is not str:
       posttime = "none"     
 
     try:
-      jobid = soup.find(name='span', attrs={'class': "indeed-apply-widget indeed-apply-button-container indeed-apply-status-not-applied"})['data-indeed-apply-jobid']
+      jobid = soup[0].find(name='span', attrs={'class': "indeed-apply-widget indeed-apply-button-container indeed-apply-status-not-applied"})['data-indeed-apply-jobid']
     except:
       jobid ="none"      
 
@@ -166,7 +197,7 @@ def get_posting(url):
 
     # if 'data scientist' in title:  # We'll proceed to grab the job posting text if the title is correct
     # All the text info is contained in the div element with the below class, extract the text.
-    #posting = soup.find(name='div', attrs={'class': "jobsearch-JobComponent"}).get_text()
+    # posting = soup[0].find(name='div', attrs={'class': "jobsearch-JobComponent"}).get_text()
     # return title, posting.lower()
     # else:
     # return False
@@ -174,7 +205,7 @@ def get_posting(url):
     # Get rid of numbers and symbols other than given
     # text = re.sub("[^a-zA-Z'+#&]", " ", text)
     # Convert to lower case and split to list and then set
-    #text = text.lower().strip()
+    # text = text.lower().strip()
 
     # return text
 
@@ -252,12 +283,12 @@ def get_data(query, num_pages, location='Brussels'):
 
               # if posttime == True:
                 postings_dict[i]['posttime'] = posttime
-                print()
+                # print()
               # else:
                 # postings_dict[i]['posttime'] = "no posttime"
 
 
-                #insert in mongodb
+                # insert in mongodb
                 # collection.insert_one(postings_dict[i])
 
             except:                        
