@@ -10,22 +10,19 @@ import datetime
 now = datetime.datetime.now().strftime("%Y - %m - %d")
 
 
-# client = MongoClient("mongodb://dragan:Dragan198@ds161136.mlab.com:61136/jobs")
-# db = client.jobs
-# collection = db.indeed
 # try:
-#     db.command("serverStatus")
-# except Exception as e:
-#     print(e)
-# else:
-#     print(collection)
+#   client = MongoClient("mongodb://dragan:Dragan198@ds161136.mlab.com:61136")
+#   db = client.jobs
+#   collection = db.indeed
+#   print("mongo connected")
+# except:
+#   print("error connection mongo")  
 
 
 async def get_soup(url):
     browser = await launch()
-    # context = await browser.createIncognitoBrowserContext()
-    # page = await context.newPage()
-    page = await browser.newPage()
+    context = await browser.createIncognitoBrowserContext()
+    page = await context.newPage()
     await page.goto(url)
     html = await page.content()
     soup = BeautifulSoup(html, 'html.parser') 
@@ -46,12 +43,9 @@ async def get_soup(url):
 #     driver = webdriver.Firefox()
 #     driver.implicitly_wait(30)
 #     driver.get(url)
-
 #     html = driver.page_source
-#     soup = BeautifulSoup(html, 'html.parser')
-    
+#     soup = BeautifulSoup(html, 'html.parser')    
 #     driver.close()
-
 #     return soup
 
 
@@ -182,18 +176,21 @@ def get_posting(url):
     company = soup[0].find(name='div', attrs={'class': "icl-u-lg-mr--sm icl-u-xs-mr--xs"}).get_text()
     companyloc = soup[0].find(text=company).findNext('div').findNext('div').get_text()
     
-    posttime = soup[0].find(name='div', attrs={'class': "jobsearch-JobMetadataFooter"}).contents[1]
-    print(posttime)
     
-    if type(posttime) is not str:
-      posttime = "none"     
+    # posttime = soup[0].find(name='div', attrs={'class': "jobsearch-JobMetadataFooter"}).contents[1]
+    # print(type(posttime))
+    # print(posttime) 
+
+    # if print(type(posttime)) != "<class 'bs4.element.NavigableString'>":
+    #   posttime = "none"
+    #   print(posttime)       
 
     try:
       jobid = soup[0].find(name='span', attrs={'class': "indeed-apply-widget indeed-apply-button-container indeed-apply-status-not-applied"})['data-indeed-apply-jobid']
     except:
       jobid ="none"      
 
-    return title, posting, company, companyloc, posttime, jobid
+    return title, posting, company, companyloc, jobid
 
     # if 'data scientist' in title:  # We'll proceed to grab the job posting text if the title is correct
     # All the text info is contained in the div element with the below class, extract the text.
@@ -282,14 +279,14 @@ def get_data(query, num_pages, location='Brussels'):
                 # postings_dict[i]['now'] = "no now"
 
               # if posttime == True:
-                postings_dict[i]['posttime'] = posttime
+                postings_dict[i]['source'] = "indeed"
                 # print()
               # else:
                 # postings_dict[i]['posttime'] = "no posttime"
 
 
                 # insert in mongodb
-                # collection.insert_one(postings_dict[i])
+                collection.insert_one(postings_dict[i])
 
             except:                        
                 continue
