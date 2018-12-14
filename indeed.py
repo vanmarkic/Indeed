@@ -1,9 +1,10 @@
 import re
 import json
 from bs4 import BeautifulSoup
-from selenium import webdriver
+# from selenium import webdriver
 import asyncio
 from pyppeteer import launch
+import pymongo
 from pymongo import MongoClient
 import datetime
 
@@ -11,15 +12,21 @@ now = datetime.datetime.now().strftime("%Y - %m - %d")
 
 
 # try:
-#   client = MongoClient("mongodb://dragan:Dragan198@ds161136.mlab.com:61136")
-#   db = client.jobs
-#   collection = db.indeed
+#   client = MongoClient("mongodb://dragan:Dragan198@ds161136.mlab.com:61136/jobs")
+#   collection = client.indeed  
 #   print("mongo connected")
 # except:
-#   print("error connection mongo")  
+#   print("error connection mongo") 
+
+try:
+    client = MongoClient('mongodb://localhost:27017/')
+    db = client.jobs
+    collection = db.react
+except:
+    print("error connection mongo") 
 
 
-async def get_soup(url):
+  def get_soup(url):
     browser = await launch()
     context = await browser.createIncognitoBrowserContext()
     page = await context.newPage()
@@ -51,15 +58,7 @@ async def get_soup(url):
 
 def grab_job_links(soup):
     """
-    Grab all non-sponsored job posting links from a Indeed search result page using the given soup object
-
-    Parameters:
-        soup: the soup object corresponding to a search result page
-                e.g. https://ca.indeed.com/jobs?q=data+scientist&l=Toronto&start=20
-
-    Returns:
-        urls: a python list of job posting urls
-
+    MAKES A LIST OF LINKS OF ALL JOB ADS
     """
     urls = []
 
@@ -70,7 +69,7 @@ def grab_job_links(soup):
 
         # This is a partial url, we need to attach the prefix
         url = 'https://be.indeed.com' + partial_url
-        # print(url)
+        print(url)
         # Make sure this is not a sponsored posting
         urls.append(url)
 
@@ -79,36 +78,24 @@ def grab_job_links(soup):
 
 def get_urls(query, num_pages, location):
     """
-    Get all the job posting URLs resulted from a specific search.
-
-    Parameters:
-        query: job title to query
-        num_pages: number of pages needed
-        location: city to search in
-
-    Returns:
-        urls: a list of job posting URL's (when num_pages valid)
-        max_pages: maximum number of pages allowed ((when num_pages invalid))
     """
     # We always need the first page
     base_url = 'https://be.indeed.com/jobs?q={}&l={}'.format(query, location)
     
-    # this is the event loop
-    loop = asyncio.get_event_loop()
-    # schedule both the coroutines to run on the event loop
-    soup = loop.run_until_complete(asyncio.gather(get_soup(base_url)))  
-    # soup = get_soup(base_url) 
-    # print(soup)
-    
-
+    # schedule coroutines to run on the event loop
+    loop = asyncio.get_event_loop()    
+    soup = loop.run_until_complete(asyncio.gather(get_soup(base_url))) 
+    """
+    version selenium
+    soup = get_soup(base_url) 
+    """
    
     urls = grab_job_links(soup)
 
     # Get the total number of postings found
     posting_count_string = soup[0].find(
         name='div', attrs={'id': "searchCount"}).get_text()
-    posting_count_string = posting_count_string[posting_count_string.find(
-        'of')+2:].strip()
+    posting_count_string = posting_count_string[posting_count_string.find('of')+2:].strip()
     # print('posting_count_string: {}'.format(posting_count_string))
     # print('type is: {}'.format(type(posting_count_string)))
 
@@ -128,7 +115,6 @@ def get_urls(query, num_pages, location):
     if num_pages > max_pages:
         print('returning max_pages!!')
         return max_pages
-
         # Additional work is needed when more than 1 page is requested
     if num_pages >= 2:
         # Start loop from page 2 since page 1 has been dealt with above
@@ -136,7 +122,7 @@ def get_urls(query, num_pages, location):
             num = (i-1) * 10
             base_url = 'https:/be.indeed.com/jobs?q={}&l={}&start={}'.format(query, location, num)
             try:
-                    # this is the event loop
+                # this is the event loop
                 loop = asyncio.get_event_loop()
                 # schedule both the coroutines to run on the event loop
                 soup = loop.run_until_complete(asyncio.gather(get_soup(base_url)))  
@@ -153,30 +139,28 @@ def get_urls(query, num_pages, location):
 
 
 def get_posting(url):
-    """
-    Get the text portion including both title and job description of the job posting from a given url
-
-    Parameters:
-        url: The job posting link
-
-    Returns:
-        title: the job title (if "data scientist" is in the title)
-        posting: the job posting content
-    """
-    # Get the url content as BS object
-        # this is the event loop
+    # this is the event loop
     loop = asyncio.get_event_loop()
-    # schedule both the coroutines to run on the event loop
-    soup = loop.run_until_complete(asyncio.gather(get_soup(url)))  
-    # soup = get_soup(url)
-
-
-    title = soup[0].find(name='h3', attrs={'class': "icl-u-xs-mb--xs icl-u-xs-mt--none jobsearch-JobInfoHeader-title"}).getText()
+    soup = loop.run_until_complete(asyncio.gather(get_soup(url)))      
+    """
+    # selenium version
+    soup = get_soup(url)
+    """
+    try:
+        title = soup[0].find(name='h3', attrs={'class': "icl-u-xs-mb--xs icl-u-xs-mt--none jobsearch-JobInfoHeader-title"}).getText()
+    except:
+        title = "none"        
+    
     posting = soup[0].find(name='div', attrs={'class': "jobsearch-JobComponent-description icl-u-xs-mt--md"}).get_text()
     company = soup[0].find(name='div', attrs={'class': "icl-u-lg-mr--sm icl-u-xs-mr--xs"}).get_text()
     companyloc = soup[0].find(text=company).findNext('div').findNext('div').get_text()
-    
-    
+
+    try:
+      jobid = soup[0].find(name='span', attrs={'class': "indeed-apply-widget indeed-apply-button-container indeed-apply-status-not-applied"})['data-indeed-apply-jobid']
+    except:
+      jobid ="none"      
+
+            
     # posttime = soup[0].find(name='div', attrs={'class': "jobsearch-JobMetadataFooter"}).contents[1]
     # print(type(posttime))
     # print(posttime) 
@@ -185,45 +169,11 @@ def get_posting(url):
     #   posttime = "none"
     #   print(posttime)       
 
-    try:
-      jobid = soup[0].find(name='span', attrs={'class': "indeed-apply-widget indeed-apply-button-container indeed-apply-status-not-applied"})['data-indeed-apply-jobid']
-    except:
-      jobid ="none"      
-
     return title, posting, company, companyloc, jobid
-
-    # if 'data scientist' in title:  # We'll proceed to grab the job posting text if the title is correct
-    # All the text info is contained in the div element with the below class, extract the text.
-    # posting = soup[0].find(name='div', attrs={'class': "jobsearch-JobComponent"}).get_text()
-    # return title, posting.lower()
-    # else:
-    # return False
-
-    # Get rid of numbers and symbols other than given
-    # text = re.sub("[^a-zA-Z'+#&]", " ", text)
-    # Convert to lower case and split to list and then set
-    # text = text.lower().strip()
-
-    # return text
 
 
 def get_data(query, num_pages, location='Brussels'):
-    """
-    Get all the job posting data and save in a json file using below structure:
-
-    {<count>: {'title': ..., 'posting':..., 'url':...}...}
-
-    The json file name has this format: ""<query>.json"
-
-    Parameters:
-        query: Indeed query keyword such as 'Data Scientist'
-        num_pages: Number of search results needed
-        location: location to search for
-
-    Returns:
-        postings_dict: Python dict including all posting data
-
-    """
+  
     # Convert the queried title to Indeed format
     query = '+'.join(query.lower().split())
 
@@ -234,12 +184,13 @@ def get_data(query, num_pages, location='Brussels'):
     if isinstance(urls, list):
         num_urls = len(urls)
         for i, url in enumerate(urls):
-            try:
-                title, posting, company, companyloc, posttime, jobid = get_posting(url)
+            try:              
+                title, posting, company, companyloc, jobid = get_posting(url)
                 postings_dict[i] = {}
 
               # if title == True:
                 postings_dict[i]['title'] = title
+                print(title)
               # else:
                 # postings_dict[i]['title'] = "no title"
 
