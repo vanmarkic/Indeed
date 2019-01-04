@@ -26,7 +26,7 @@ except:
     print("error connection mongo") 
 
 
-  def get_soup(url):
+async def get_soup(url):
     browser = await launch()
     context = await browser.createIncognitoBrowserContext()
     page = await context.newPage()
@@ -278,3 +278,4 @@ if __name__ == "__main__":
             print("Invalid number of pages! Please try again.")
 
     get_data(query, num_pages, location='Brussels')
+
